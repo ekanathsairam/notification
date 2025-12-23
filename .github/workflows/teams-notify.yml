@@ -3,11 +3,9 @@ name: Notify Teams on Workflow Changes or Tag Pushes
 
 on:
   push:
-    paths:
-      - ".github/workflows/*.yml"
-      - ".github/workflows/*.yaml"
     tags:
       - "*"
+tags: "dev"
 
 jobs:
   notify-teams:

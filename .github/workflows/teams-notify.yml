@@ -1,0 +1,51 @@
+
+name: Notify Teams on Workflow Changes or Tag Pushes
+
+on:
+  push:
+    paths:
+      - ".github/workflows/*.yml"
+      - ".github/workflows/*.yaml"
+    tags:
+      - "*"
+
+jobs:
+  notify-teams:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout commit
+        uses: actions/checkout@v4
+
+      - name: Read commit message
+        run: |
+          echo "COMMIT_MSG=$(git log -1 --pretty=%B)" >> $GITHUB_ENV
+
+      - name: Determine Event Details
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "EVENT_TYPE=Tag Push" >> $GITHUB_ENV
+            echo "REF_VALUE=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          else
+            echo "EVENT_TYPE=YAML Change" >> $GITHUB_ENV
+            echo "REF_VALUE=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+          fi
+
+      - name: Send Teams notification
+        run: |
+          payload=$(cat << EOF
+          {
+            "title": "GitHub Notification - $EVENT_TYPE",
+            "text": "**Repository:** ${GITHUB_REPOSITORY}<br>
+                     **Triggered By:** ${GITHUB_ACTOR}<br>
+                     **Event:** ${EVENT_TYPE}<br>
+                     **Branch/Tag:** ${REF_VALUE}<br>
+                     **Commit SHA:** ${GITHUB_SHA}<br>
+                     **Message:** ${COMMIT_MSG}"
+          }
+          EOF
+          )
+
+          curl -H "Content-Type: application/json" \
+               -d "$payload" \
+               ${{ secrets.TEAMS_WEBHOOK_URL }}

@@ -27,7 +27,7 @@ jobs:
             echo "EVENT_TYPE=Tag Push" >> $GITHUB_ENV
             echo "REF_VALUE=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
           else
-            echo "EVENT_TYPE=YAML Change" >> $GITHUB_ENV
+            echo "EVENT_TYPE=YAML file Changed" >> $GITHUB_ENV
             echo "REF_VALUE=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
           fi
 

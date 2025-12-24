@@ -122,7 +122,7 @@ jobs:
 
       - name: Send Teams notification
         env:
-          TEAMS_WEBHOOK_URL: ${{ secrets.teams_webhook_url }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
         shell: bash
         run: |
           curl -sS -X POST \

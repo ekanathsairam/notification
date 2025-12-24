@@ -103,4 +103,3 @@ jobs:
                -H "Content-Type: application/json" \
                -d "${payload}" \
                "${TEAMS_WEBHOOK_URL}"
-``

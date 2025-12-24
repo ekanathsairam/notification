@@ -121,11 +121,25 @@ jobs:
           echo "PAYLOAD_FILE=payload.json" >> "$GITHUB_ENV"
 
       - name: Send Teams notification
-        env:
-          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-        shell: bash
         run: |
-          curl -sS -X POST \
-            -H "Content-Type: application/json" \
-            --data @"${PAYLOAD_FILE}" \
-            "${TEAMS_WEBHOOK_URL}"
+          payload=$(cat << EOF
+          {
+            "title": "GitHub Notification - $EVENT_TYPE",
+            "text": "**Repository:** ${GITHUB_REPOSITORY}
+
+                     **Triggered By:** ${GITHUB_ACTOR}
+
+                     **Event:** ${EVENT_TYPE}
+
+                     **Branch/Tag:** ${REF_VALUE}
+
+                     **Commit SHA:** ${GITHUB_SHA}
+
+                     **Message:** ${COMMIT_MSG}"
+          }
+          EOF
+          )
+
+          curl -H "Content-Type: application/json" \
+               -d "$payload" \
+               ${{ secrets.TEAMS_WEBHOOK_URL }}

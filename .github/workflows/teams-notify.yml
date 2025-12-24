@@ -27,11 +27,6 @@ jobs:
       - name: Checkout caller repo
         uses: actions/checkout@v4
 
-      - name: Set up Node (for JSON escaping only)
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Capture commit message safely
         shell: bash
         run: |
@@ -67,16 +62,15 @@ jobs:
             echo "COMMIT_URL=${COMMIT_URL}"
           } >> "$GITHUB_ENV"
 
-      - name: JSON-escape commit message (no Python)
-        id: jsonmsg
+      - name: JSON-escape commit message (jq, no Python/Node)
         shell: bash
         run: |
-          # Use Node to JSON.stringify the COMMIT_MSG (handles quotes/newlines safely)
-          ESCAPED=$(node -e 'console.log(JSON.stringify(process.env.COMMIT_MSG || ""))')
-          echo "COMMIT_MSG_JSON=${ESCAPED}" >> "$GITHUB_ENV"
+          # Convert COMMIT_MSG into a JSON string (escape quotes/newlines safely)
+          # -R: read raw string, -s: slurp entire input as a single string
+          COMMIT_MSG_JSON=$(printf '%s' "${COMMIT_MSG}" | jq -Rs .)
+          echo "COMMIT_MSG_JSON=${COMMIT_MSG_JSON}" >> "$GITHUB_ENV"
 
       - name: Build payload (quoted heredoc to avoid interpolation)
-        id: payload
         shell: bash
         run: |
           set -euo pipefail

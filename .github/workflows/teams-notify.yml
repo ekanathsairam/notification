@@ -1,49 +1,106 @@
 
-name: Notify Teams on Workflow Changes or Tag Pushes
+# org/shared-notify/.github/workflows/teams-notify.yml
+name: Teams Notification (Reusable)
 
 on:
-  push:
-    tags:
-      - "*"
-
+  workflow_call:
+    inputs:
+      notify_title:
+        description: "Card title"
+        type: string
+        default: "GitHub Notification"
+      theme_color:
+        description: "Hex color (without #) for Teams card"
+        type: string
+        default: "0076D7"
+    secrets:
+      teams_webhook_url:
+        description: "Teams Incoming Webhook URL"
+        required: true
 
 jobs:
-  notify-teams:
+  notify:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read  # for checkout
     steps:
-      - name: Checkout commit
+      - name: Checkout caller repo
         uses: actions/checkout@v4
 
-      - name: Read commit messages
+      - name: Capture commit message
         run: |
-          echo "COMMIT_MSG=$(git log -1 --pretty=%B)" >> $GITHUB_ENV
+          # Use the commit that triggered the workflow
+          COMMIT_MSG="$(git log -1 --pretty=%B || echo "No commit message found")"
+          echo "COMMIT_MSG<<EOF" >> "$GITHUB_ENV"
+          echo "$COMMIT_MSG" >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
 
-      - name: Determine Event Details
+      - name: Determine event details
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "EVENT_TYPE=Tag Push" >> $GITHUB_ENV
-            echo "REF_VALUE=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          REF_FULL="${GITHUB_REF}"
+          # Safely parse ref type and name
+          if [[ "$REF_FULL" == refs/tags/* ]]; then
+            EVENT_TYPE="Tag Push"
+            REF_NAME="${REF_FULL#refs/tags/}"
+            REF_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${REF_NAME}"
           else
-            echo "EVENT_TYPE=YAML file Changed" >> $GITHUB_ENV
-            echo "REF_VALUE=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+            EVENT_TYPE="Workflow YAML Changed"
+            REF_NAME="${REF_FULL#refs/heads/}"
+            REF_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${REF_NAME}"
           fi
 
+          COMMIT_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+
+          printf 'EVENT_TYPE=%s\n' "$EVENT_TYPE" >> "$GITHUB_ENV"
+          printf 'REF_NAME=%s\n' "$REF_NAME" >> "$GITHUB_ENV"
+          printf 'REF_URL=%s\n' "$REF_URL" >> "$GITHUB_ENV"
+          printf 'COMMIT_URL=%s\n' "$COMMIT_URL" >> "$GITHUB_ENV"
+
       - name: Send Teams notification
+        env:
+          TITLE: ${{ inputs.notify_title }}
+          THEME_COLOR: ${{ inputs.theme_color }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.teams_webhook_url }}
         run: |
-          payload=$(cat << EOF
+          # Build a MessageCard payload for Teams Incoming Webhook
+          payload="$(cat << EOF
           {
-            "title": "GitHub Notification - $EVENT_TYPE",
-            "text": "**Repository:** ${GITHUB_REPOSITORY}<br>
-                     **Triggered By:** ${GITHUB_ACTOR}<br>
-                     **Event:** ${EVENT_TYPE}<br>
-                     **Branch/Tag:** ${REF_VALUE}<br>
-                     **Commit SHA:** ${GITHUB_SHA}<br>
-                     **Message:** ${COMMIT_MSG}"
+            "@type": "MessageCard",
+            "@context": "https://schema.org/extensions",
+            "summary": "${TITLE}",
+            "themeColor": "${THEME_COLOR}",
+            "title": "${TITLE} - ${EVENT_TYPE}",
+            "sections": [
+              {
+                "facts": [
+                  { "name": "Repository", "value": "${GITHUB_REPOSITORY}" },
+                  { "name": "Triggered By", "value": "${GITHUB_ACTOR}" },
+                  { "name": "Event", "value": "${EVENT_TYPE}" },
+                  { "name": "Branch/Tag", "value": "${REF_NAME}" },
+                  { "name": "Commit SHA", "value": "${GITHUB_SHA}" },
+                  { "name": "Commit URL", "value": "${COMMIT_URL}" }
+                ],
+                "text": "${COMMIT_MSG}"
+              }
+            ],
+            "potentialAction": [
+              {
+                "@type": "OpenUri",
+                "name": "View Commit",
+                "targets": [{ "os": "default", "uri": "${COMMIT_URL}" }]
+              },
+              {
+                "@type": "OpenUri",
+                "name": "View Branch/Tag",
+                "targets": [{ "os": "default", "uri": "${REF_URL}" }]
+              }
+            ]
           }
           EOF
-          )
+          )"
 
-          curl -H "Content-Type: application/json" \
-               -d "$payload" \
-               ${{ secrets.TEAMS_WEBHOOK_URL }}
+          curl -sS -X POST \
+               -H "Content-Type: application/json" \
+               -d "${payload}" \
+               "${TEAMS_WEBHOOK_URL}"
+``

@@ -1,4 +1,5 @@
 
+# org/shared-notify/.github/workflows/teams-notify.yml
 name: Teams Notification (Reusable)
 
 on:
@@ -21,94 +22,85 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read  # for checkout
     steps:
-      - name: Checkout caller repository
+      - name: Checkout caller repo
         uses: actions/checkout@v4
 
-      - name: Capture commit message safely
-        shell: bash
+      - name: Capture commit message
         run: |
-          COMMIT_MSG="$(git log -1 --pretty=%B || true)"
-          {
-            echo "COMMIT_MSG<<EOF"
-            echo "${COMMIT_MSG}"
-            echo "EOF"
-          } >> "$GITHUB_ENV"
+          # Use the commit that triggered the workflow
+          COMMIT_MSG="$(git log -1 --pretty=%B || echo "No commit message found")"
+          echo "COMMIT_MSG<<EOF" >> "$GITHUB_ENV"
+          echo "$COMMIT_MSG" >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
 
-      - name: Determine event details & build links
-        shell: bash
+      - name: Determine event details
         run: |
           REF_FULL="${GITHUB_REF}"
-          if [[ "${REF_FULL}" == refs/tags/* ]]; then
+          # Safely parse ref type and name
+          if [[ "$REF_FULL" == refs/tags/* ]]; then
             EVENT_TYPE="Tag Push"
             REF_NAME="${REF_FULL#refs/tags/}"
+            REF_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${REF_NAME}"
           else
             EVENT_TYPE="Workflow YAML Changed"
             REF_NAME="${REF_FULL#refs/heads/}"
+            REF_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${REF_NAME}"
           fi
 
-          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-          REF_URL="${REPO_URL}/tree/${REF_NAME}"
-          COMMIT_URL="${REPO_URL}/commit/${GITHUB_SHA}"
+          COMMIT_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
 
-          {
-            echo "EVENT_TYPE=${EVENT_TYPE}"
-            echo "REF_NAME=${REF_NAME}"
-            echo "REF_URL=${REF_URL}"
-            echo "COMMIT_URL=${COMMIT_URL}"
-          } >> "$GITHUB_ENV"
+          printf 'EVENT_TYPE=%s\n' "$EVENT_TYPE" >> "$GITHUB_ENV"
+          printf 'REF_NAME=%s\n' "$REF_NAME" >> "$GITHUB_ENV"
+          printf 'REF_URL=%s\n' "$REF_URL" >> "$GITHUB_ENV"
+          printf 'COMMIT_URL=%s\n' "$COMMIT_URL" >> "$GITHUB_ENV"
 
-      - name: Send Teams notification (MessageCard)
+      - name: Send Teams notification
         env:
           TITLE: ${{ inputs.notify_title }}
           THEME_COLOR: ${{ inputs.theme_color }}
           TEAMS_WEBHOOK_URL: ${{ secrets.teams_webhook_url }}
-        shell: bash
         run: |
-          COMMIT_MSG_JSON=$(python3 - << 'PYCODE'
-import json, os
-print(json.dumps(os.environ.get("COMMIT_MSG","")))
-PYCODE
-)
-
-          TMP_PAYLOAD="$(mktemp)"
-          cat > "${TMP_PAYLOAD}" <<EOF
-{
-  "@type": "MessageCard",
-  "@context": "https://schema.org/extensions",
-  "summary": "${TITLE}",
-  "themeColor": "${THEME_COLOR}",
-  "title": "${TITLE} - ${EVENT_TYPE}",
-  "sections": [
-    {
-      "facts": [
-        { "name": "Repository",   "value": "${GITHUB_REPOSITORY}" },
-        { "name": "Triggered By", "value": "${GITHUB_ACTOR}" },
-        { "name": "Event",        "value": "${EVENT_TYPE}" },
-        { "name": "Branch/Tag",   "value": "${REF_NAME}" },
-        { "name": "Commit SHA",   "value": "${GITHUB_SHA}" },
-        { "name": "Commit URL",   "value": "${COMMIT_URL}" }
-      ],
-      "text": ${COMMIT_MSG_JSON}
-    }
-  ],
-  "potentialAction": [
-    {
-      "@type": "OpenUri",
-      "name": "View Commit",
-      "targets": [{ "os": "default", "uri": "${COMMIT_URL}" }]
-    },
-    {
-      "@type": "OpenUri",
-      "name": "View Branch/Tag",
-      "targets": [{ "os": "default", "uri": "${REF_URL}" }]
-    }
-  ]
-}
-EOF
+          # Build a MessageCard payload for Teams Incoming Webhook
+          payload="$(cat << EOF
+          {
+            "@type": "MessageCard",
+            "@context": "https://schema.org/extensions",
+            "summary": "${TITLE}",
+            "themeColor": "${THEME_COLOR}",
+            "title": "${TITLE} - ${EVENT_TYPE}",
+            "sections": [
+              {
+                "facts": [
+                  { "name": "Repository", "value": "${GITHUB_REPOSITORY}" },
+                  { "name": "Triggered By", "value": "${GITHUB_ACTOR}" },
+                  { "name": "Event", "value": "${EVENT_TYPE}" },
+                  { "name": "Branch/Tag", "value": "${REF_NAME}" },
+                  { "name": "Commit SHA", "value": "${GITHUB_SHA}" },
+                  { "name": "Commit URL", "value": "${COMMIT_URL}" }
+                ],
+                "text": "${COMMIT_MSG}"
+              }
+            ],
+            "potentialAction": [
+              {
+                "@type": "OpenUri",
+                "name": "View Commit",
+                "targets": [{ "os": "default", "uri": "${COMMIT_URL}" }]
+              },
+              {
+                "@type": "OpenUri",
+                "name": "View Branch/Tag",
+                "targets": [{ "os": "default", "uri": "${REF_URL}" }]
+              }
+            ]
+          }
+          EOF
+          )"
 
           curl -sS -X POST \
                -H "Content-Type: application/json" \
-               --data @"${TMP_PAYLOAD}" \
+               -d "${payload}" \
                "${TEAMS_WEBHOOK_URL}"
+``

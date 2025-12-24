@@ -62,70 +62,60 @@ jobs:
             echo "COMMIT_URL=${COMMIT_URL}"
           } >> "$GITHUB_ENV"
 
-      - name: JSON-escape commit message (jq, no Python/Node)
-        shell: bash
-        run: |
-          # Convert COMMIT_MSG into a JSON string (escape quotes/newlines safely)
-          # -R: read raw string, -s: slurp entire input as a single string
-          COMMIT_MSG_JSON=$(printf '%s' "${COMMIT_MSG}" | jq -Rs .)
-          echo "COMMIT_MSG_JSON=${COMMIT_MSG_JSON}" >> "$GITHUB_ENV"
-
-      - name: Build payload (quoted heredoc to avoid interpolation)
+      - name: Build JSON payload with jq (no heredoc, no Python/Node)
+        env:
+          TITLE: ${{ inputs.notify_title }}
+          THEME_COLOR: ${{ inputs.theme_color }}
         shell: bash
         run: |
           set -euo pipefail
 
-          payload_file="$(mktemp)"
-          cat << 'EOF' > "${payload_file}"
-{
-  "@type": "MessageCard",
-  "@context": "https://schema.org/extensions",
-  "summary": "___TITLE___",
-  "themeColor": "___THEME_COLOR___",
-  "title": "___TITLE___ - ___EVENT_TYPE___",
-  "sections": [
-    {
-      "facts": [
-        { "name": "Repository",   "value": "___GITHUB_REPOSITORY___" },
-        { "name": "Triggered By", "value": "___GITHUB_ACTOR___" },
-        { "name": "Event",        "value": "___EVENT_TYPE___" },
-        { "name": "Branch/Tag",   "value": "___REF_NAME___" },
-        { "name": "Commit SHA",   "value": "___GITHUB_SHA___" },
-        { "name": "Commit URL",   "value": "___COMMIT_URL___" }
-      ],
-      "text": ___COMMIT_MSG_JSON___
-    }
-  ],
-  "potentialAction": [
-    {
-      "@type": "OpenUri",
-      "name": "View Commit",
-      "targets": [{ "os": "default", "uri": "___COMMIT_URL___" }]
-    },
-    {
-      "@type": "OpenUri",
-      "name": "View Branch/Tag",
-      "targets": [{ "os": "default", "uri": "___REF_URL___" }]
-    }
-  ]
-}
-EOF
+          # Use jq to construct a valid JSON payload and safely inject strings
+          jq -n \
+            --arg title "$TITLE" \
+            --arg color "$THEME_COLOR" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg actor "$GITHUB_ACTOR" \
+            --arg event "$EVENT_TYPE" \
+            --arg refname "$REF_NAME" \
+            --arg sha "$GITHUB_SHA" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg ref_url "$REF_URL" \
+            --arg commit_msg "$COMMIT_MSG" \
+            '{
+              "@type": "MessageCard",
+              "@context": "https://schema.org/extensions",
+              summary: $title,
+              themeColor: $color,
+              title: ($title + " - " + $event),
+              sections: [
+                {
+                  facts: [
+                    { "name": "Repository",   "value": $repo },
+                    { "name": "Triggered By", "value": $actor },
+                    { "name": "Event",        "value": $event },
+                    { "name": "Branch/Tag",   "value": $refname },
+                    { "name": "Commit SHA",   "value": $sha },
+                    { "name": "Commit URL",   "value": $commit_url }
+                  ],
+                  text: $commit_msg
+                }
+              ],
+              potentialAction: [
+                {
+                  "@type": "OpenUri",
+                  "name": "View Commit",
+                  "targets": [{ "os": "default", "uri": $commit_url }]
+                },
+                {
+                  "@type": "OpenUri",
+                  "name": "View Branch/Tag",
+                  "targets": [{ "os": "default", "uri": $ref_url }]
+                }
+              ]
+            }' > payload.json
 
-          # Replace placeholders safely
-          sed -i \
-            -e "s|___TITLE___|${{ inputs.notify_title }}|g" \
-            -e "s|___THEME_COLOR___|${{ inputs.theme_color }}|g" \
-            -e "s|___EVENT_TYPE___|${EVENT_TYPE}|g" \
-            -e "s|___GITHUB_REPOSITORY___|${GITHUB_REPOSITORY}|g" \
-            -e "s|___GITHUB_ACTOR___|${GITHUB_ACTOR}|g" \
-            -e "s|___REF_NAME___|${REF_NAME}|g" \
-            -e "s|___GITHUB_SHA___|${GITHUB_SHA}|g" \
-            -e "s|___COMMIT_URL___|${COMMIT_URL}|g" \
-            -e "s|___REF_URL___|${REF_URL}|g" \
-            -e "s|___COMMIT_MSG_JSON___|${COMMIT_MSG_JSON}|g" \
-            "${payload_file}"
-
-          echo "PAYLOAD_FILE=${payload_file}" >> "$GITHUB_ENV"
+          echo "PAYLOAD_FILE=payload.json" >> "$GITHUB_ENV"
 
       - name: Send Teams notification
         env:

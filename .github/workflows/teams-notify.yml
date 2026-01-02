@@ -25,6 +25,10 @@ jobs:
     steps:
       - name: Checkout caller repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
 
       - name: Capture commit message safely
         shell: bash
@@ -42,14 +46,16 @@ jobs:
           set -euo pipefail
 
           REF_FULL="${GITHUB_REF}"
-
+          
           if [[ "${REF_FULL}" == refs/tags/* ]]; then
-            echo "EVENT_TYPE=Tag Push" >> $GITHUB_ENV
-            echo "REF_NAME=${REF_FULL#refs/tags/}" >> $GITHUB_ENV
+            EVENT_TYPE="Tag Push"
+            REF_NAME="${REF_FULL#refs/tags/}"
           else
-            echo "EVENT_TYPE=Workflow YAML Changed" >> $GITHUB_ENV
-            echo "REF_NAME=${REF_FULL#refs/heads/}"  >> $GITHUB_ENV
+            EVENT_TYPE="Workflow YAML Changed"
+            REF_NAME="${REF_FULL#refs/heads/}"
           fi
+
+
 
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
           REF_URL="${REPO_URL}/tree/${REF_NAME}"

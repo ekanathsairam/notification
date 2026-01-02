@@ -44,11 +44,11 @@ jobs:
           REF_FULL="${GITHUB_REF}"
 
           if [[ "${REF_FULL}" == refs/tags/* ]]; then
-            EVENT_TYPE="Tag Push"
-            REF_NAME="${REF_FULL#refs/tags/}"
+            echo "EVENT_TYPE=Tag Push" >> $GITHUB_ENV
+            echo "REF_NAME=${REF_FULL#refs/tags/}" >> $GITHUB_ENV
           else
-            EVENT_TYPE="Workflow YAML Changed"
-            REF_NAME="${REF_FULL#refs/heads/}"
+            echo "EVENT_TYPE=Workflow YAML Changed" >> $GITHUB_ENV
+            echo "REF_NAME=${REF_FULL#refs/heads/}"  >> $GITHUB_ENV
           fi
 
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
@@ -131,7 +131,7 @@ jobs:
 
                      **Event:** ${EVENT_TYPE}
 
-                     **Branch/Tag:** ${REF_VALUE}
+                     **Branch/Tag:** ${REF_NAME}
 
                      **Commit SHA:** ${GITHUB_SHA}
 
